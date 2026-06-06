@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ForensAI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="header">
+      <a class="header__logo" href="/">
+        <span class="header__icon" aria-hidden="true">F</span>
+        <span class="header__title">ForensAI</span>
+      </a>
+      <div class="header__tools">
+        <span class="quota-badge" id="quotaBadge">—</span>
+        <div class="lang-switch">
+          <button type="button" class="lang-btn active" data-lang="ru">RU</button>
+          <button type="button" class="lang-btn" data-lang="en">EN</button>
+          <button type="button" class="lang-btn" data-lang="uz">UZ</button>
+        </div>
+        <button type="button" class="btn-icon" id="themeToggle" data-i18n="theme.light">Светлая</button>
+        <button type="button" class="btn-icon" id="navPro" data-i18n="nav.pro">Pro</button>
+        <button type="button" class="btn-icon" id="navReferral" data-i18n="nav.referral">Реферал</button>
+        <button type="button" class="btn-icon" id="navHistory" data-i18n="nav.history">История</button>
+      </div>
+      <div class="header__status" id="statusPills"></div>
+    </header>
+
+    <section class="upload-panel">
+      <div class="upload-panel__tabs" role="tablist">
+        <button type="button" class="upload-tab active" data-tab="file" role="tab" data-i18n="tab.file">Файл</button>
+        <button type="button" class="upload-tab" data-tab="text" role="tab" data-i18n="tab.text">Текст</button>
+        <button type="button" class="upload-tab" data-tab="compare" role="tab" data-i18n="tab.compare">Сравнение</button>
+        <button type="button" class="upload-tab" data-tab="batch" role="tab" data-i18n="tab.batch">Пакет</button>
+      </div>
+
+      <div class="upload-panel__body">
+        <div class="tab-panel active" id="panel-file">
+          <label class="file-picker" id="dropzone">
+            <input type="file" id="fileInput" accept="image/*,video/*,.txt,.md,.json,.csv" hidden>
+            <span class="file-picker__icon" aria-hidden="true">↑</span>
+            <span class="file-picker__text">
+              <strong id="fileName">Выберите файл</strong>
+              <small data-i18n="upload.hint">Изображение, видео или документ · до 50 МБ</small>
+            </span>
+          </label>
+        </div>
+        <div class="tab-panel" id="panel-text">
+          <textarea id="textInput" class="text-input" data-i18n-placeholder="upload.textPlaceholder" rows="3"></textarea>
+        </div>
+        <div class="tab-panel" id="panel-compare">
+          <div class="compare-pickers">
+            <label class="file-picker file-picker--compact" id="dropzoneA">
+              <input type="file" id="fileInputA" accept="image/*,video/*,.txt,.md" hidden>
+              <span class="file-picker__text">
+                <strong id="fileNameA" data-i18n="upload.fileA">Файл A</strong>
+                <small data-i18n="upload.fileAHint">Оригинал / эталон</small>
+              </span>
+            </label>
+            <label class="file-picker file-picker--compact" id="dropzoneB">
+              <input type="file" id="fileInputB" accept="image/*,video/*,.txt,.md" hidden>
+              <span class="file-picker__text">
+                <strong id="fileNameB">Файл B</strong>
+                <small data-i18n="upload.fileBHint">Подозрительный</small>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div class="tab-panel" id="panel-batch">
+          <label class="file-picker" id="dropzoneBatch">
+            <input type="file" id="fileInputBatch" accept="image/*,video/*,.txt,.md" multiple hidden>
+            <span class="file-picker__text">
+              <strong id="batchFileCount">Выберите файлы</strong>
+              <small data-i18n="upload.batchHint">Несколько файлов · по очереди</small>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <button type="button" class="btn-analyze" id="analyzeBtn" data-i18n="btn.analyze">Анализировать</button>
+    </section>
+
+    <main class="main" id="outputPanel">
+      <div class="placeholder" id="emptyState">
+        <p class="placeholder__title" data-i18n="empty.title">Результат появится здесь</p>
+        <p class="placeholder__text" data-i18n="empty.text">Загрузите материал и нажмите «Анализировать».</p>
+      </div>
+
+      <article class="report hidden" id="report">
+        <div class="verdict-hero" id="verdictCard">
+          <div class="verdict-hero__content">
+            <p class="verdict-hero__meta">
+              <span id="reportId">—</span>
+              <span class="verdict-hero__dot">·</span>
+              <span id="analysisMode">—</span>
+            </p>
+            <h1 class="verdict-hero__title" id="verdictLabel">—</h1>
+            <p class="verdict-hero__conf"><span data-i18n="report.confidence">Уверенность</span>: <strong id="confidenceValue">0%</strong></p>
+          </div>
+          <div class="verdict-hero__actions">
+            <button type="button" class="btn-outline" id="exportPdfBtn" data-i18n="report.exportPdf">PDF</button>
+            <button type="button" class="btn-outline" id="exportBtn" data-i18n="report.exportJson">JSON</button>
+          </div>
+          <div class="verdict-hero__bar" aria-hidden="true">
+            <div class="verdict-hero__fill" id="confidenceFill"></div>
+          </div>
+        </div>
+
+        <div class="scores">
+          <div class="score-card score-card--ai">
+            <span class="score-card__name" data-i18n="score.ai">Индекс ИИ</span>
+            <span class="score-card__num" id="aiScore">0</span>
+            <div class="score-card__track"><div class="score-card__fill" id="aiScoreBar"></div></div>
+          </div>
+          <div class="score-card score-card--pl">
+            <span class="score-card__name" data-i18n="score.plagiarism">Плагиат</span>
+            <span class="score-card__num" id="plagiarismScore">0</span>
+            <div class="score-card__track"><div class="score-card__fill" id="plagiarismScoreBar"></div></div>
+          </div>
+          <div class="score-card score-card--ok">
+            <span class="score-card__name" data-i18n="score.authenticity">Подлинность</span>
+            <span class="score-card__num" id="authScore">0</span>
+            <div class="score-card__track"><div class="score-card__fill" id="authScoreBar"></div></div>
+          </div>
+        </div>
+
+        <div class="stats-row hidden" id="metricsStrip"></div>
+
+        <section class="block hidden" id="compareSection">
+          <h2 class="block__title" data-i18n="section.compare">Сравнение двух материалов</h2>
+          <p class="compare-summary" id="compareSummary"></p>
+          <div class="compare-cards" id="compareCards"></div>
+        </section>
+
+        <div class="report-grid">
+          <div class="report-col">
+            <section class="block hidden" id="mediaPreviewSection">
+              <h2 class="block__title" data-i18n="section.preview">Превью</h2>
+              <div class="preview" id="mediaPreview">
+                <canvas id="zoneCanvas" class="zone-canvas hidden"></canvas>
+              </div>
+            </section>
+            <section class="block hidden" id="zonesSection">
+              <div class="block__head">
+                <h2 class="block__title" data-i18n="section.zones">Карта зон</h2>
+                <div class="tags">
+                  <span class="tag tag--ok" data-i18n="tag.ok">Норма</span>
+                  <span class="tag tag--warn" data-i18n="tag.warn">Риск</span>
+                  <span class="tag tag--bad" data-i18n="tag.bad">Высокий</span>
+                </div>
+              </div>
+              <div class="heatmap-wrap hidden" id="zoneHeatmapWrap">
+                <div class="heatmap" id="zoneHeatmap"></div>
+              </div>
+              <div class="zones" id="zonesGrid"></div>
+            </section>
+            <section class="block hidden" id="categoriesSection">
+              <h2 class="block__title" data-i18n="section.categories">Категории риска</h2>
+              <div class="bars" id="categoryBars"></div>
+            </section>
+            <section class="block hidden" id="videoTimelineSection">
+              <h2 class="block__title" data-i18n="section.timeline">Временная шкала</h2>
+              <div class="timeline" id="videoTimeline"></div>
+            </section>
+          </div>
+          <div class="report-col">
+            <section class="block">
+              <h2 class="block__title" data-i18n="section.reasoning">Обоснование</h2>
+              <div class="reasoning" id="reasoningGrid"></div>
+            </section>
+            <section class="block hidden" id="osintSection">
+              <h2 class="block__title" data-i18n="section.osint">OSINT</h2>
+              <div id="osintPanel"></div>
+            </section>
+            <section class="block">
+              <h2 class="block__title" data-i18n="section.evidence">Улики</h2>
+              <ul class="evidence" id="evidenceList"></ul>
+            </section>
+            <section class="block hidden" id="segmentsSection">
+              <h2 class="block__title" data-i18n="section.segments">Фрагменты текста</h2>
+              <div class="table-scroll">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="table.num">#</th>
+                      <th data-i18n="table.text">Текст</th>
+                      <th data-i18n="table.ai">ИИ</th>
+                      <th data-i18n="table.plagiarism">Плагиат</th>
+                      <th data-i18n="table.flags">Маркеры</th>
+                    </tr>
+                  </thead>
+                  <tbody id="segmentsBody"></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="block hidden" id="highlightSection">
+              <h2 class="block__title" data-i18n="section.highlight">Разметка</h2>
+              <div class="text-highlight" id="textMap"></div>
+            </section>
+          </div>
+        </div>
+      </article>
+
+      <div class="overlay hidden" id="loading">
+        <div class="overlay__box">
+          <div class="spinner"></div>
+          <p class="overlay__title" id="loadingTitle" data-i18n="loading.title">Анализ…</p>
+          <div class="overlay__progress">
+            <div class="overlay__bar"><div class="overlay__fill" id="progressFill"></div></div>
+            <span id="progressPercent">0%</span>
+          </div>
+          <p class="overlay__step" id="loadingSteps" data-i18n="loading.prep">Подготовка</p>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer" data-i18n="footer.disclaimer">Результат носит аналитический характер.</footer>
+  </div>
+
+  <!-- Subscription -->
+  <div class="modal hidden" id="modalSub">
+    <div class="modal-backdrop"></div>
+    <div class="modal__panel">
+      <button type="button" class="modal-close" aria-label="Close">×</button>
+      <h2 class="modal__title" data-i18n="sub.title">Подписка ForensAI Pro</h2>
+      <p class="modal-muted" id="subRemaining">—</p>
+      <p class="modal-muted" id="subDiscount">—</p>
+      <div class="plan-card">
+        <div class="plan-card__head">
+          <span id="subPlanName">Pro</span>
+          <span class="plan-card__price" id="subPrice">$9.99</span>
+        </div>
+        <p class="modal-muted" data-i18n="sub.demoPay">Демо-оплата (без карты)</p>
+      </div>
+      <button type="button" class="btn-analyze modal__cta" id="upgradeBtn" data-i18n="sub.upgrade">Оформить Pro</button>
+    </div>
+  </div>
+
+  <!-- Referral -->
+  <div class="modal hidden" id="modalReferral">
+    <div class="modal-backdrop"></div>
+    <div class="modal__panel">
+      <button type="button" class="modal-close">×</button>
+      <h2 class="modal__title" data-i18n="ref.title">Реферальная программа</h2>
+      <p class="modal-muted" id="refDesc">—</p>
+      <p class="modal-muted" id="refVerified">—</p>
+      <label class="field-label" data-i18n="ref.yourCode">Ваш код</label>
+      <p class="ref-code" id="refCode">--------</p>
+      <label class="field-label" data-i18n="ref.link">Ссылка</label>
+      <div class="ref-row">
+        <input type="text" class="text-input" id="refLink" readonly>
+        <button type="button" class="btn-outline" id="copyRefLink">Copy</button>
+      </div>
+      <label class="field-label" data-i18n="ref.apply">Код друга</label>
+      <div class="ref-row">
+        <input type="text" class="text-input" id="refInput" placeholder="ABC12345">
+        <button type="button" class="btn-outline" id="applyRefBtn" data-i18n="ref.applyBtn">Применить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History -->
+  <div class="modal hidden" id="modalHistory">
+    <div class="modal-backdrop"></div>
+    <div class="modal__panel modal__panel--wide">
+      <button type="button" class="modal-close">×</button>
+      <h2 class="modal__title" data-i18n="hist.title">История отчётов</h2>
+      <div id="historyList"></div>
+      <button type="button" class="btn-outline" id="clearHistoryBtn" data-i18n="hist.clear">Очистить</button>
+    </div>
+  </div>
+
+  <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/account.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

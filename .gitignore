@@ -1,0 +1,10 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+uploads/
+public/
+.vercel/
+data/accounts.json
+gemini-code-*.txt

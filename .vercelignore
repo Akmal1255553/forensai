@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+uploads/
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+gemini-code-*.txt
+test_apis.py
+run.bat
