@@ -5,3 +5,6 @@ requires-python = ">=3.11"
 
 [tool.vercel]
 entrypoint = "app:app"
+
+[tool.vercel.scripts]
+build = "python scripts/vercel_build.py"
