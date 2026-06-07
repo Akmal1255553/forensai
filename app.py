@@ -30,7 +30,8 @@ from services.account_store import (
 )
 
 app = FastAPI(title="AI Forensic Expert", version="1.0.0")
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
