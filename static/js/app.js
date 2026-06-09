@@ -636,29 +636,59 @@ function renderOsint(osint, contentType) {
     section?.classList.add("hidden");
     return;
   }
+  const c = osint.compact || {};
+  const hasData = c.hash_full || c.resolution || osint.reverse_search?.length;
+  if (!hasData) {
+    section.classList.add("hidden");
+    return;
+  }
   section.classList.remove("hidden");
-  let html = "";
-  if (osint.file_hash_sha256) {
-    html += `<p class="osint-hash"><strong>SHA-256:</strong> ${esc(osint.file_hash_sha256)}</p>`;
+
+  const chips = [];
+  if (c.resolution) {
+    chips.push(`<span class="osint-chip">${esc(c.resolution)}${c.megapixels != null ? ` · ${c.megapixels} MP` : ""}</span>`);
   }
-  if (osint.checks?.length) {
-    html += `<ul class="osint-list">${osint.checks.map((c) => `<li>${esc(I18n.translateLine(c))}</li>`).join("")}</ul>`;
+  if (c.format) chips.push(`<span class="osint-chip">${esc(c.format)}</span>`);
+  if (c.exif_status) {
+    const exifKey = c.exif_status === "camera" ? "osint.exifCamera"
+      : c.exif_status === "missing" ? "osint.exifMissingShort"
+        : c.exif_status === "error" ? "osint.exifErrorShort" : "osint.exifPresentShort";
+    const exifLabel = c.camera ? tr("osint.exifCamera", { model: c.camera }) : tr(exifKey);
+    chips.push(`<span class="osint-chip osint-chip--${esc(c.exif_status)}">${esc(exifLabel)}</span>`);
   }
-  if (osint.metadata_lines?.length) {
-    html += `<ul class="osint-list">${osint.metadata_lines.slice(0, 12).map((c) => `<li>${esc(I18n.translateLine(c))}</li>`).join("")}</ul>`;
-  }
-  if (osint.reverse_search?.length) {
-    html += `<div class="osint-links">${osint.reverse_search.map((l) =>
-      `<a class="osint-link" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.name)}</a>`
-    ).join("")}</div>`;
-  }
-  const recs = I18n.getLang() === "ru" && osint.recommendations?.length
-    ? osint.recommendations
-    : I18n.osintRecommendations(contentType || "image");
-  if (recs?.length) {
-    html += `<ul class="osint-list">${recs.map((c) => `<li>${esc(c)}</li>`).join("")}</ul>`;
-  }
-  panel.innerHTML = html || `<p class="osint-list">${tr("osint.noData")}</p>`;
+  if (c.duration_sec != null) chips.push(`<span class="osint-chip">${tr("osint.durationShort", { n: c.duration_sec })}</span>`);
+  if (c.fps) chips.push(`<span class="osint-chip">${c.fps} fps</span>`);
+
+  const hashRow = c.hash_full
+    ? `<div class="osint-hash-row" title="${esc(c.hash_full)}">
+        <code class="osint-hash-code">${esc(c.hash_short || c.hash_full.slice(0, 16))}…</code>
+        <button type="button" class="osint-copy-btn" data-hash="${esc(c.hash_full)}">${tr("osint.copy")}</button>
+      </div>`
+    : "";
+
+  const links = osint.reverse_search?.length
+    ? `<div class="osint-links">${osint.reverse_search.map((l) =>
+        `<a class="osint-link" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.hint || "")}">${esc(l.name)}</a>`
+      ).join("")}</div>`
+    : "";
+
+  const exifDetails = osint.metadata_lines?.length
+    ? `<details class="osint-details"><summary>${tr("osint.exifDetails")}</summary>
+        <ul class="osint-meta-list">${osint.metadata_lines.map((line) => `<li>${esc(line)}</li>`).join("")}</ul>
+      </details>`
+    : "";
+
+  panel.innerHTML = `<div class="osint-compact">
+    ${chips.length ? `<div class="osint-chips">${chips.join("")}</div>` : ""}
+    ${hashRow}
+    ${links}
+    ${exifDetails}
+  </div>`;
+
+  panel.querySelector(".osint-copy-btn")?.addEventListener("click", (e) => {
+    const hash = e.currentTarget.dataset.hash;
+    if (hash) navigator.clipboard?.writeText(hash).then(() => showError(tr("ref.copied")));
+  });
 }
 
 function renderCompare(comparison, reportA, reportB, nameA, nameB) {

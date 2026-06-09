@@ -867,45 +867,99 @@ body {
   margin-top: 0.35rem;
 }
 
-/* OSINT */
-.osint-hash {
+/* OSINT — compact */
+.osint-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.osint-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.osint-chip {
   font-size: 0.7rem;
-  word-break: break-all;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
   color: var(--muted);
-  margin-bottom: 0.65rem;
-  padding: 0.5rem;
+  border: 1px solid var(--border);
+}
+
+.osint-chip--missing { color: var(--muted); }
+.osint-chip--camera { color: var(--ok, #34d399); border-color: rgba(52, 211, 153, 0.3); }
+
+.osint-hash-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
   background: var(--surface-2);
   border-radius: 6px;
+  border: 1px solid var(--border);
 }
 
-.osint-list {
-  list-style: none;
-  margin: 0.5rem 0;
-  font-size: 0.8125rem;
+.osint-hash-code {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
   color: var(--muted);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.osint-list li { margin-bottom: 0.25rem; }
+.osint-copy-btn {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.osint-copy-btn:hover { background: var(--accent-dim); }
 
 .osint-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin: 0.5rem 0;
+  gap: 0.35rem;
 }
 
 .osint-link {
-  font-size: 0.75rem;
-  padding: 0.3rem 0.55rem;
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
   border-radius: 6px;
   border: 1px solid var(--border);
   color: var(--accent);
   text-decoration: none;
 }
 
-.osint-link:hover {
-  background: var(--accent-dim);
+.osint-link:hover { background: var(--accent-dim); }
+
+.osint-details {
+  font-size: 0.7rem;
+  color: var(--muted);
 }
+
+.osint-details summary {
+  cursor: pointer;
+  color: var(--accent);
+  user-select: none;
+}
+
+.osint-meta-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  font-size: 0.68rem;
+}
+
+.osint-meta-list li { margin-bottom: 0.15rem; }
 
 .verdict-hero__actions {
   display: flex;

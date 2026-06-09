@@ -22,12 +22,11 @@ WEAK_CATEGORIES = {
     "metadata", "resolution", "noise", "sharpness", "зона:",
 }
 
+# Только конкретные визуальные дефекты — не общие категории «анатомия/геометрия» от LLM.
 STRONG_CATEGORIES = {
-    "анатомия", "anatomy", "пальц", "зуб", "уш", "глаз", "лиц", "портрет",
-    "геометр", "geometry", "кракозябр", "текст на фоне", "текст",
-    "deepfake", "синхрон", "биометр", "артефакт", "генератор", "синтет",
-    "пластик", "кож", "волос", "по генератора", "midjourney", "stable", "dall",
-    "визуальн", "ai-эстетик", "нереалист",
+    "пальц", "зуб", "кракозябр", "текст на фоне",
+    "deepfake", "генератор", "по генератора", "midjourney", "stable diffusion", "dall",
+    "6 пальц", "лишн", "слияние", "артефакт генерац",
 }
 
 
@@ -51,8 +50,8 @@ def _local_synthetic_score(local: dict) -> int:
         score += 22
     if m.get("uniform_noise_suspect"):
         score += 18
-    if m.get("no_exif_synthetic_hint"):
-        score += 12
+    if m.get("no_exif_synthetic_hint") and (m.get("synthetic_smoothness") or m.get("uniform_noise_suspect")):
+        score += 6
     if m.get("ai_resolution_hint"):
         score += 15
     zones_flagged = int(m.get("zones_flagged") or 0)
@@ -63,6 +62,28 @@ def _local_synthetic_score(local: dict) -> int:
     hot = int(m.get("zones_high_risk") or 0)
     score += min(20, hot * 10)
     return min(85, score)
+
+
+def _looks_like_real_photo(metrics: dict, local_ai: float, synth: int) -> bool:
+    """Селфи/фото из мессенджера: низкий локальный score, нет синтетики."""
+    if local_ai > 32 or synth >= 32:
+        return False
+    if metrics.get("synthetic_smoothness") or metrics.get("uniform_noise_suspect"):
+        return False
+    return True
+
+
+def _has_concrete_ai_evidence(evidence: list[dict]) -> bool:
+    """Критические улики с конкретным дефектом, а не общие оценки категорий."""
+    for e in evidence:
+        if e.get("severity") != "critical":
+            continue
+        if _is_strong_evidence(e.get("category", ""), e.get("description", "")):
+            return True
+        desc = (e.get("description") or "").lower()
+        if any(w in desc for w in ("пальц", "зуб", "кракозябр", "midjourney", "dall", "stable diffusion", "flux")):
+            return True
+    return False
 
 
 def calibrate_image_report(
@@ -79,7 +100,6 @@ def calibrate_image_report(
     local_ai = float(local.get("ai_score") or 0)
 
     critical = [e for e in evidence if e.get("severity") == "critical"]
-    moderate = [e for e in evidence if e.get("severity") == "moderate"]
     strong = [e for e in evidence if _is_strong_evidence(e.get("category", ""), e.get("description", ""))]
     weak_only = bool(evidence) and all(
         _is_weak_evidence(e.get("category", ""), e.get("description", "")) for e in evidence
@@ -88,37 +108,39 @@ def calibrate_image_report(
     ai = int(scores.get("ai", 50))
     llm_ai_val = int(llm_ai) if llm_ai is not None else ai
     synth = _local_synthetic_score(local)
+    concrete_ai = _has_concrete_ai_evidence(evidence)
+    real_photo = _looks_like_real_photo(metrics, local_ai, synth)
 
     camera_exif = metrics.get("camera_detected", False)
-    llm_says_ai = llm_verdict == "ai_generated" or llm_ai_val >= 58
-    llm_says_human = llm_verdict == "human_created" and llm_ai_val < 42
+    llm_says_human = llm_verdict == "human_created" and llm_ai_val < 45
 
-    # Повышаем AI при синтетических локальных сигналах или сильных уликах
-    if synth >= 35 or len(strong) >= 1:
-        ai = max(ai, synth, llm_ai_val, local_ai)
-    if llm_says_ai:
-        ai = max(ai, llm_ai_val, 52)
-    if len(strong) >= 2 or len(critical) >= 2:
-        ai = max(ai, 68)
-    elif len(strong) >= 1 or len(critical) >= 1:
-        ai = max(ai, 55)
+    # Повышаем только при подтверждённых сигналах (локальных или конкретных уликах)
+    if synth >= 40 or concrete_ai:
+        ai = max(ai, synth, local_ai)
+    if llm_ai_val >= 72 and synth >= 25:
+        ai = max(ai, llm_ai_val - 8)
+    if len(strong) >= 2 or (len(strong) >= 1 and concrete_ai):
+        ai = max(ai, 62)
+    elif concrete_ai and len(critical) >= 1:
+        ai = max(ai, 58)
 
-    # Снижаем только при явных признаках реальной камеры + согласии LLM
-    if camera_exif and llm_says_human and weak_only and not strong and synth < 25:
-        ai = min(ai, max(12, llm_ai_val, int(local_ai)))
-        ai = max(8, ai - 5)
-    elif camera_exif and not strong and llm_ai_val < 38:
-        ai = min(ai, max(llm_ai_val, int(local_ai * 0.5 + llm_ai_val * 0.5)))
+    # Реальное фото: локальная экспертиза не видит синтетику — не доверяем завышению LLM
+    if real_photo and not concrete_ai:
+        ai = min(ai, int(local_ai * 0.55 + llm_ai_val * 0.45))
+        ai = min(ai, 38)
+        if weak_only or llm_says_human:
+            ai = min(ai, max(12, int(local_ai + 5)))
+
+    if camera_exif and not strong and not concrete_ai:
+        ai = min(ai, max(int(local_ai), llm_ai_val - 10, 15))
 
     ai = max(0, min(100, ai))
     scores = {**scores, "ai": ai, "authenticity": max(0, 100 - ai)}
 
     verdict, label, confidence = verdict_from_scores(ai)
-    # При множественных сильных уликах — не ниже hybrid/ai
-    if len(strong) >= 2 or len(critical) >= 2:
-        if ai < 65:
-            ai = max(ai, 65)
-            scores = {**scores, "ai": ai, "authenticity": max(0, 100 - ai)}
+    if (len(strong) >= 2 or concrete_ai) and ai < 65 and synth >= 45:
+        ai = max(ai, 65)
+        scores = {**scores, "ai": ai, "authenticity": max(0, 100 - ai)}
         verdict, label, confidence = verdict_from_scores(ai)
 
     return {

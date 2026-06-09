@@ -107,12 +107,12 @@ def analyze_image(path: Path) -> ImageForensicReport:
                 "location": "EXIF",
             })
         elif not exif_info["present"]:
-            category_parts["metadata"].append(18)
+            category_parts["metadata"].append(6)
             metrics["no_exif_synthetic_hint"] = True
             findings.append({
                 "category": "Метаданные",
-                "severity": "moderate",
-                "description": "EXIF отсутствует — возможна выгрузка из генератора или мессенджера",
+                "severity": "minor",
+                "description": "EXIF отсутствует (нормально для мессенджеров и соцсетей)",
                 "location": "EXIF",
             })
 

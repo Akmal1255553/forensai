@@ -12,7 +12,12 @@ from analyzers.plagiarism import analyze_plagiarism
 from analyzers.segment_analysis import analyze_segments, build_metrics, build_reasoning
 from analyzers.text_heuristics import analyze_text_heuristics, heuristics_to_verdict
 from analyzers.osint import build_osint
-from analyzers.verdict_calibrator import calibrate_image_report, calibrate_video_report, verdict_from_scores
+from analyzers.verdict_calibrator import (
+    _local_synthetic_score,
+    calibrate_image_report,
+    calibrate_video_report,
+    verdict_from_scores,
+)
 from analyzers.video_forensics import analyze_video
 from config import GEMINI_API_KEY, GEMINI_MODEL, OPENAI_API_KEY, OPENAI_MODEL
 from prompts import HEURISTICS_APPENDIX, IMAGE_PROMPT_EXTRA, SYSTEM_PROMPT, VIDEO_PROMPT_EXTRA
@@ -70,18 +75,30 @@ async def _analyze_with_gemini(
     )
 
 
-def _compute_scores(ai_score: float, plagiarism_score: float, data: dict, local_ai: float, content_type: str = "text") -> dict:
+def _compute_scores(
+    ai_score: float,
+    plagiarism_score: float,
+    data: dict,
+    local_ai: float,
+    content_type: str = "text",
+    local_forensics: dict | None = None,
+) -> dict:
     scores = data.get("scores") or {}
     llm_ai = scores.get("ai")
     if llm_ai is None:
         merged_ai = int(local_ai)
     elif content_type == "image":
         llm_val = int(llm_ai)
-        merged_ai = int(local_ai * 0.25 + llm_val * 0.75)
-        if llm_val >= 55:
-            merged_ai = max(merged_ai, llm_val)
-        if llm_val >= 70:
-            merged_ai = max(merged_ai, llm_val - 5)
+        local_val = int(local_ai)
+        local = local_forensics or {}
+        metrics = local.get("metrics") or {}
+        synth = _local_synthetic_score(local)
+        if local_val <= 32 and synth < 30 and not metrics.get("synthetic_smoothness"):
+            merged_ai = int(local_val * 0.60 + llm_val * 0.40)
+        else:
+            merged_ai = int(local_val * 0.40 + llm_val * 0.60)
+        if llm_val >= 75 and synth >= 30:
+            merged_ai = max(merged_ai, llm_val - 12)
     elif content_type == "video":
         merged_ai = int(local_ai * 0.35 + int(llm_ai) * 0.65)
     else:
@@ -142,8 +159,20 @@ def _finalize_report(
     segments = segments or []
     local_forensics = local_forensics or {}
 
-    scores = _compute_scores(ai_score, plagiarism_score, data, local_forensics.get("ai_score", ai_score), content_type)
-    category_scores = data.get("category_scores") or local_forensics.get("category_scores") or {}
+    scores = _compute_scores(
+        ai_score,
+        plagiarism_score,
+        data,
+        local_forensics.get("ai_score", ai_score),
+        content_type,
+        local_forensics=local_forensics,
+    )
+    llm_cats = data.get("category_scores") or {}
+    local_cats = local_forensics.get("category_scores") or {}
+    if content_type == "image" and float(local_forensics.get("ai_score", 50)) < 32:
+        category_scores = {k: min(int(v), 38) for k, v in (llm_cats or local_cats).items()}
+    else:
+        category_scores = llm_cats or local_cats
     zones = _merge_zones(local_forensics.get("zones", []), data.get("zones", []))
 
     calibrated = dict(data)

@@ -1,4 +1,4 @@
-"""OSINT-подсказки: хеш, метаданные, ссылки на обратный поиск."""
+"""OSINT: хеш, метаданные, обратный поиск — компактная структура для UI."""
 from __future__ import annotations
 
 import hashlib
@@ -16,22 +16,28 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _exif_lines(path: Path) -> list[str]:
-    lines: list[str] = []
+def _exif_summary(path: Path) -> tuple[str, list[str]]:
+    """Статус EXIF и ключевые теги (только если есть данные)."""
     try:
         with Image.open(path) as img:
             exif = img.getexif()
             if not exif:
-                return ["EXIF: отсутствует"]
+                return "missing", []
+            lines: list[str] = []
+            camera = ""
             for tag_id, value in exif.items():
                 tag = TAGS.get(tag_id, str(tag_id))
                 val = str(value).strip()
-                if len(val) > 120:
-                    val = val[:120] + "…"
-                lines.append(f"{tag}: {val}")
-    except Exception as exc:
-        lines.append(f"EXIF: ошибка чтения ({exc})")
-    return lines[:20]
+                if tag in ("Make", "Model"):
+                    camera += f" {val}".strip()
+                if tag in ("Make", "Model", "DateTime", "Software", "LensModel"):
+                    if len(val) > 80:
+                        val = val[:80] + "…"
+                    lines.append(f"{tag}: {val}")
+            status = "camera" if camera else "present"
+            return status, lines[:6]
+    except Exception:
+        return "error", []
 
 
 def build_osint(
@@ -45,67 +51,46 @@ def build_osint(
     out: dict = {
         "filename": filename,
         "content_type": content_type,
-        "checks": [],
+        "compact": {},
         "reverse_search": [],
         "metadata_lines": [],
-        "recommendations": [],
     }
 
     if content_type == "image" and file_path and file_path.exists():
-        out["file_hash_sha256"] = _sha256(file_path)
-        out["metadata_lines"] = _exif_lines(file_path)
+        full_hash = _sha256(file_path)
         w, h = metrics.get("width"), metrics.get("height")
-        if w and h:
-            out["checks"].append(f"Разрешение: {w}×{h} ({metrics.get('megapixels', '?')} MP)")
-        if metrics.get("camera_model"):
-            out["checks"].append(f"Камера (EXIF): {metrics['camera_model']}")
-        elif metrics.get("exif_present") is False:
-            out["checks"].append("EXIF отсутствует — возможна пересылка или экспорт из генератора")
-        if metrics.get("format"):
-            out["checks"].append(f"Формат: {metrics['format']}")
+        exif_status, exif_lines = _exif_summary(file_path)
+        if metrics.get("camera_detected") and metrics.get("camera_model"):
+            exif_status = "camera"
+
+        out["file_hash_sha256"] = full_hash
+        out["compact"] = {
+            "hash_short": full_hash[:16],
+            "hash_full": full_hash,
+            "resolution": f"{w}×{h}" if w and h else None,
+            "megapixels": metrics.get("megapixels"),
+            "exif_status": exif_status,
+            "camera": metrics.get("camera_model") or None,
+            "format": metrics.get("format"),
+        }
+        if exif_lines:
+            out["metadata_lines"] = exif_lines
 
         out["reverse_search"] = [
-            {
-                "name": "Google Lens",
-                "url": "https://lens.google.com/",
-                "hint": "Загрузите изображение для поиска копий в сети",
-            },
-            {
-                "name": "Yandex Images",
-                "url": "https://yandex.ru/images/",
-                "hint": "Обратный поиск по картинке",
-            },
-            {
-                "name": "TinEye",
-                "url": "https://tineye.com/",
-                "hint": "Поиск ранних публикаций и дубликатов",
-            },
+            {"name": "Google Lens", "url": "https://lens.google.com/"},
+            {"name": "Yandex", "url": "https://yandex.ru/images/"},
+            {"name": "TinEye", "url": "https://tineye.com/"},
         ]
-        out["recommendations"] = [
-            "Сверьте хеш файла с оригиналом источника, если он известен.",
-            "Проверьте дату первой публикации через обратный поиск.",
-            "Сопоставите EXIF с заявленным устройством и местом съёмки.",
-        ]
+
     elif content_type == "video" and file_path and file_path.exists():
-        out["file_hash_sha256"] = _sha256(file_path)
-        dur = metrics.get("duration_sec")
-        fps = metrics.get("fps")
-        if dur is not None:
-            out["checks"].append(f"Длительность: {dur} с")
-        if fps:
-            out["checks"].append(f"FPS: {fps}")
-        if metrics.get("has_audio") is not None:
-            out["checks"].append(f"Аудио: {'да' if metrics.get('has_audio') else 'нет'}")
-        out["recommendations"] = [
-            "Извлеките ключевые кадры и проверьте их отдельно как изображения.",
-            "Сравните синхронизацию губ и мигание при подозрении на deepfake.",
-        ]
-    elif content_type == "text":
-        out["recommendations"] = [
-            "Проверьте уникальные фрагменты в поисковике в кавычках.",
-            "Сопоставьте стиль с другими публикациями автора.",
-        ]
-    else:
-        out["recommendations"] = ["Загрузите файл для расширенного OSINT-анализа."]
+        full_hash = _sha256(file_path)
+        out["file_hash_sha256"] = full_hash
+        out["compact"] = {
+            "hash_short": full_hash[:16],
+            "hash_full": full_hash,
+            "duration_sec": metrics.get("duration_sec"),
+            "fps": metrics.get("fps"),
+            "has_audio": metrics.get("has_audio"),
+        }
 
     return out
