@@ -27,6 +27,8 @@
         <button type="button" class="btn-icon" id="navPro" data-i18n="nav.pro">Pro</button>
         <button type="button" class="btn-icon" id="navReferral" data-i18n="nav.referral">Реферал</button>
         <button type="button" class="btn-icon" id="navHistory" data-i18n="nav.history">История</button>
+        <span class="auth-user hidden" id="authUserLabel"></span>
+        <button type="button" class="btn-icon hidden" id="navAuth" data-i18n="auth.login">Войти</button>
       </div>
       <div class="header__status" id="statusPills"></div>
     </header>
@@ -264,6 +266,37 @@
     </div>
   </div>
 
+  <!-- Auth -->
+  <div class="modal hidden" id="modalAuth">
+    <div class="modal-backdrop"></div>
+    <div class="modal__panel">
+      <button type="button" class="modal-close" aria-label="Close">×</button>
+      <h2 class="modal__title" data-i18n="auth.title">Вход в ForensAI</h2>
+      <p class="modal-muted" data-i18n="auth.subtitle">Войдите, чтобы сохранять квоту, историю и рефералы</p>
+      <div class="auth-tabs">
+        <button type="button" class="auth-tab active" data-tab="signin" data-i18n="auth.signIn">Вход</button>
+        <button type="button" class="auth-tab" data-tab="signup" data-i18n="auth.signUp">Регистрация</button>
+      </div>
+      <p class="auth-error" id="authError"></p>
+      <div id="authSignIn">
+        <label class="field-label" data-i18n="auth.email">Email</label>
+        <input type="email" class="text-input" id="authEmailIn" autocomplete="email">
+        <label class="field-label" data-i18n="auth.password">Пароль</label>
+        <input type="password" class="text-input" id="authPasswordIn" autocomplete="current-password">
+        <button type="button" class="btn-analyze modal__cta" id="authSignInBtn" data-i18n="auth.signIn">Вход</button>
+      </div>
+      <div id="authSignUp" class="hidden">
+        <label class="field-label" data-i18n="auth.email">Email</label>
+        <input type="email" class="text-input" id="authEmailUp" autocomplete="email">
+        <label class="field-label" data-i18n="auth.password">Пароль</label>
+        <input type="password" class="text-input" id="authPasswordUp" autocomplete="new-password">
+        <button type="button" class="btn-analyze modal__cta" id="authSignUpBtn" data-i18n="auth.signUp">Регистрация</button>
+      </div>
+      <div class="auth-divider"><span data-i18n="auth.or">или</span></div>
+      <button type="button" class="btn-outline modal__cta" id="authGoogleBtn" data-i18n="auth.google">Войти через Google</button>
+    </div>
+  </div>
+
   <!-- History -->
   <div class="modal hidden" id="modalHistory">
     <div class="modal-backdrop"></div>
@@ -275,7 +308,9 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="/static/js/i18n.js"></script>
+  <script src="/static/js/auth.js"></script>
   <script src="/static/js/account.js"></script>
   <script src="/static/js/app.js"></script>
 </body>

@@ -206,7 +206,7 @@ function renderMetrics(metrics) {
     [tr("metric.quality"), metrics.processing_quality != null ? `${metrics.processing_quality}%` : null],
     ["MP", metrics.megapixels],
     ["FPS", metrics.fps],
-    ["FPS", metrics.frames_analyzed],
+    [tr("metric.frames"), metrics.frames_analyzed],
     ["ELA", metrics.ela_variance],
   ];
 
@@ -405,6 +405,9 @@ function analyzeWithProgress(form, contentType) {
         if (xhr.status >= 200 && xhr.status < 300) {
           Account?.onAnalyzeResponse?.(data);
           resolve(data);
+        } else if (xhr.status === 401) {
+          window.Auth?.openModal?.("signin");
+          reject(new Error(tr("error.auth")));
         } else if (xhr.status === 402) reject(new Error(tr("error.limit")));
         else reject(new Error(data.detail || tr("error.analyze")));
       } catch {
@@ -856,6 +859,9 @@ function compareWithProgress(form) {
         if (xhr.status >= 200 && xhr.status < 300) {
           Account?.onAnalyzeResponse?.(data);
           resolve(data);
+        } else if (xhr.status === 401) {
+          window.Auth?.openModal?.("signin");
+          reject(new Error(tr("error.auth")));
         } else if (xhr.status === 402) reject(new Error(tr("error.limit")));
         else reject(new Error(data.detail || tr("error.analyze")));
       } catch {
@@ -891,6 +897,8 @@ function initAnalyzeButton() {
 }
 
 async function onAnalyzeClick() {
+  if (window.Auth?.isEnabled?.() && !window.Auth?.requireAuth?.()) return;
+
   lastAnalyzedText = "";
   analyzeBtn.disabled = true;
   loading.classList.remove("hidden");

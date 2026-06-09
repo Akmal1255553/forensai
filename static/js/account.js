@@ -1,10 +1,11 @@
-/* Аккаунт, подписка, рефералы, история */
+/* Account, subscription, referrals, history */
 (function () {
   const USER_KEY = "forensai_user_id";
   const HIST_KEY = "forensai_history";
   const MAX_HIST = 30;
 
   let account = null;
+  let serverHistory = false;
 
   function t(k, v) {
     return window.I18n?.t(k, v) ?? k;
@@ -20,10 +21,23 @@
   }
 
   function apiHeaders() {
-    return { "X-User-Id": getUserId(), Accept: "application/json" };
+    const h = { Accept: "application/json" };
+    const token = window.Auth?.getToken?.();
+    if (token) {
+      h.Authorization = `Bearer ${token}`;
+    } else if (!window.Auth?.isEnabled?.()) {
+      h["X-User-Id"] = getUserId();
+    }
+    return h;
   }
 
   async function init() {
+    if (window.Auth?.isEnabled?.() && !window.Auth?.isLoggedIn?.()) {
+      account = null;
+      updateQuotaBadge();
+      return;
+    }
+
     const ref = localStorage.getItem("forensai_pending_ref");
     const body = ref ? JSON.stringify({ referral_code: ref }) : "{}";
     if (ref) localStorage.removeItem("forensai_pending_ref");
@@ -33,6 +47,10 @@
         headers: { ...apiHeaders(), "Content-Type": "application/json" },
         body,
       });
+      if (res.status === 401) {
+        window.Auth?.openModal?.("signin");
+        return;
+      }
       const data = await res.json();
       if (data.account) account = data.account;
     } catch {
@@ -42,8 +60,14 @@
   }
 
   async function refresh() {
+    if (window.Auth?.isEnabled?.() && !window.Auth?.isLoggedIn?.()) {
+      account = null;
+      updateQuotaBadge();
+      return account;
+    }
     try {
       const res = await fetch("/api/account", { headers: apiHeaders() });
+      if (res.status === 401) return account;
       const data = await res.json();
       if (data.account) account = data.account;
       updateQuotaBadge();
@@ -55,7 +79,16 @@
 
   function updateQuotaBadge() {
     const el = document.getElementById("quotaBadge");
-    if (!el || !account) return;
+    if (!el) return;
+    if (window.Auth?.isEnabled?.() && !window.Auth?.isLoggedIn?.()) {
+      el.textContent = t("auth.signInToAnalyze");
+      el.classList.remove("quota-badge--pro");
+      return;
+    }
+    if (!account) {
+      el.textContent = "—";
+      return;
+    }
     const plan = account.plan === "pro" ? "Pro" : t("sub.free");
     const left = account.plan === "pro" ? "∞" : account.analyses_remaining;
     el.textContent = t("quota.badge", { plan, left });
@@ -63,6 +96,7 @@
   }
 
   function canAnalyze() {
+    if (window.Auth?.isEnabled?.() && !window.Auth?.isLoggedIn?.()) return false;
     if (!account) return true;
     return account.plan === "pro" || account.analyses_remaining > 0;
   }
@@ -74,7 +108,19 @@
     }
   }
 
-  function saveHistory(entry) {
+  async function saveHistory(entry) {
+    if (serverHistory && window.Auth?.isLoggedIn?.()) {
+      try {
+        await fetch("/api/history", {
+          method: "POST",
+          headers: { ...apiHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify(entry),
+        });
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     try {
       const list = JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
       list.unshift({
@@ -92,7 +138,16 @@
     }
   }
 
-  function loadHistory() {
+  async function loadHistory() {
+    if (serverHistory && window.Auth?.isLoggedIn?.()) {
+      try {
+        const res = await fetch("/api/history", { headers: apiHeaders() });
+        const data = await res.json();
+        return data.items || [];
+      } catch {
+        return [];
+      }
+    }
     try {
       return JSON.parse(localStorage.getItem(HIST_KEY) || "[]");
     } catch {
@@ -100,7 +155,15 @@
     }
   }
 
-  function clearHistory() {
+  async function clearHistory() {
+    if (serverHistory && window.Auth?.isLoggedIn?.()) {
+      try {
+        await fetch("/api/history", { method: "DELETE", headers: apiHeaders() });
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     localStorage.removeItem(HIST_KEY);
   }
 
@@ -153,10 +216,10 @@
     if (verified) verified.textContent = t("ref.verified", { n: acc.referrals_verified ?? 0 });
   }
 
-  function renderHistoryModal() {
+  async function renderHistoryModal() {
     const list = document.getElementById("historyList");
     if (!list) return;
-    const items = loadHistory();
+    const items = await loadHistory();
     if (!items.length) {
       list.innerHTML = `<p class="modal-muted">${t("hist.empty")}</p>`;
       return;
@@ -173,7 +236,7 @@
     `).join("");
     list.querySelectorAll(".hist-open").forEach((btn) => {
       btn.addEventListener("click", () => {
-        const item = items.find((x) => x.id === Number(btn.dataset.id));
+        const item = items.find((x) => String(x.id) === String(btn.dataset.id));
         if (item?.data) {
           closeModal("modalHistory");
           window.dispatchEvent(new CustomEvent("forensai:openReport", { detail: item.data }));
@@ -184,21 +247,24 @@
 
   function bindUi() {
     document.getElementById("navPro")?.addEventListener("click", () => {
+      if (!window.Auth?.requireAuth?.()) return;
       renderSubscriptionModal();
       openModal("modalSub");
     });
     document.getElementById("navReferral")?.addEventListener("click", () => {
+      if (!window.Auth?.requireAuth?.()) return;
       renderReferralModal();
       openModal("modalReferral");
     });
-    document.getElementById("navHistory")?.addEventListener("click", () => {
-      renderHistoryModal();
+    document.getElementById("navHistory")?.addEventListener("click", async () => {
+      if (!window.Auth?.requireAuth?.()) return;
+      await renderHistoryModal();
       openModal("modalHistory");
     });
     document.querySelectorAll(".modal-close, .modal-backdrop").forEach((el) => {
       el.addEventListener("click", (e) => {
         const modal = e.target.closest(".modal");
-        if (modal) modal.classList.add("hidden");
+        if (modal && modal.id !== "modalAuth") modal.classList.add("hidden");
       });
     });
     document.getElementById("themeToggle")?.addEventListener("click", () => I18n.toggleTheme());
@@ -209,6 +275,10 @@
       updateQuotaBadge();
       renderSubscriptionModal();
       renderReferralModal();
+    });
+
+    window.addEventListener("forensai:auth", async () => {
+      await init();
     });
 
     document.getElementById("upgradeBtn")?.addEventListener("click", async () => {
@@ -250,21 +320,29 @@
       }
     });
 
-    document.getElementById("clearHistoryBtn")?.addEventListener("click", () => {
-      clearHistory();
-      renderHistoryModal();
+    document.getElementById("clearHistoryBtn")?.addEventListener("click", async () => {
+      await clearHistory();
+      await renderHistoryModal();
     });
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  async function bootstrap() {
     I18n.applyDom();
     bindUi();
-    init();
-  });
+    await new Promise((resolve) => {
+      if (window.Auth) resolve();
+      else window.addEventListener("forensai:auth-ready", resolve, { once: true });
+    });
+    serverHistory = window.Auth?.isEnabled?.() || false;
+    await init();
+  }
+
+  document.addEventListener("DOMContentLoaded", bootstrap);
 
   window.Account = {
     getUserId,
     apiHeaders,
+    init,
     refresh,
     canAnalyze,
     onAnalyzeResponse,

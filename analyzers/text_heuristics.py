@@ -3,6 +3,8 @@ import statistics
 from collections import Counter
 from dataclasses import dataclass, field
 
+from analyzers.linguistic import analyze_linguistics
+
 
 AI_CLICHES_RU = [
     "важно отметить",
@@ -261,6 +263,18 @@ def analyze_text_heuristics(text: str) -> HeuristicReport:
             )
         )
 
+    linguistic = analyze_linguistics(text)
+    score_parts.extend(linguistic.score_parts)
+    for f in linguistic.findings:
+        findings.append(
+            HeuristicFinding(
+                category=f["category"],
+                severity=f.get("severity", "minor"),
+                description=f["description"],
+                location=f.get("location", ""),
+            )
+        )
+
     ai_score = statistics.mean(score_parts) if score_parts else 15.0
     ai_score = max(5.0, min(95.0, ai_score))
 
@@ -271,6 +285,7 @@ def analyze_text_heuristics(text: str) -> HeuristicReport:
         "средняя_длина_предложения": round(
             statistics.mean(len(s.split()) for s in sentences) if sentences else 0, 1
         ),
+        **linguistic.stats,
     }
 
     return HeuristicReport(ai_score=ai_score, findings=findings, stats=stats)

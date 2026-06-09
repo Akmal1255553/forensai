@@ -1,8 +1,7 @@
-import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -18,16 +17,19 @@ from config import (
     PRO_PRICE_USD,
     REFERRAL_DISCOUNT_PERCENT,
     STATIC_DIR,
+    SUPABASE_ANON_KEY,
+    SUPABASE_ENABLED,
+    SUPABASE_URL,
     UPLOAD_DIR,
 )
 from services.account_store import (
     ensure_can_analyze,
-    get_account,
     get_or_create_user,
     record_analysis,
     register_referral_attempt,
     upgrade_plan,
 )
+from services.auth import resolve_user_id
 
 app = FastAPI(title="AI Forensic Expert", version="1.0.0")
 if STATIC_DIR.is_dir():
@@ -39,11 +41,21 @@ async def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.get("/api/config")
+async def public_config():
+    return {
+        "auth_enabled": SUPABASE_ENABLED,
+        "supabase_url": SUPABASE_URL if SUPABASE_ENABLED else None,
+        "supabase_anon_key": SUPABASE_ANON_KEY if SUPABASE_ENABLED else None,
+    }
+
+
 @app.get("/api/status")
 async def status():
     return {
         "gemini_configured": bool(GEMINI_API_KEY),
         "openai_configured": bool(OPENAI_API_KEY),
+        "auth_enabled": SUPABASE_ENABLED,
         "max_upload_mb": MAX_UPLOAD_MB,
         "free_analyses_per_month": FREE_ANALYSES_PER_MONTH,
         "pro_price_usd": PRO_PRICE_USD,
@@ -68,60 +80,83 @@ class ReferralBody(BaseModel):
     referral_code: str
 
 
-def _user_id_header(x_user_id: str | None = Header(None, alias="X-User-Id")) -> str | None:
-    return (x_user_id or "").strip() or None
+class HistoryBody(BaseModel):
+    filename: str | None = None
+    report: dict | None = None
+    comparison: dict | None = None
+    report_a: dict | None = None
+    report_b: dict | None = None
+    filename_a: str | None = None
+    filename_b: str | None = None
 
 
-def _check_quota(user_id: str | None) -> str:
-    uid = get_or_create_user(user_id)["user_id"]
+def _check_quota(user_id: str) -> str:
+    get_or_create_user(user_id)
     try:
-        ensure_can_analyze(uid)
+        ensure_can_analyze(user_id)
     except PermissionError:
         raise HTTPException(402, "analysis_limit_reached")
-    return uid
+    return user_id
 
 
 @app.get("/api/account")
-async def account_me(x_user_id: str | None = Header(None, alias="X-User-Id")):
-    acc = get_or_create_user(_user_id_header(x_user_id))
+async def account_me(user_id: str = Depends(resolve_user_id)):
+    acc = get_or_create_user(user_id)
     return {"ok": True, "account": acc}
 
 
 @app.post("/api/account/init")
 async def account_init(
     body: AccountInitBody | None = None,
-    x_user_id: str | None = Header(None, alias="X-User-Id"),
+    user_id: str = Depends(resolve_user_id),
 ):
     code = body.referral_code if body else None
-    acc = get_or_create_user(_user_id_header(x_user_id), code)
+    acc = get_or_create_user(user_id, code)
     return {"ok": True, "account": acc}
 
 
 @app.post("/api/account/referral")
-async def account_referral(
-    body: ReferralBody,
-    x_user_id: str | None = Header(None, alias="X-User-Id"),
-):
-    uid = _user_id_header(x_user_id)
-    if not uid:
-        raise HTTPException(400, "user_id_required")
-    acc = register_referral_attempt(uid, body.referral_code)
+async def account_referral(body: ReferralBody, user_id: str = Depends(resolve_user_id)):
+    acc = register_referral_attempt(user_id, body.referral_code)
     return {"ok": True, "account": acc, "message": "referral_applied"}
 
 
 @app.post("/api/subscription/upgrade")
-async def subscription_upgrade(
-    body: UpgradeBody,
-    x_user_id: str | None = Header(None, alias="X-User-Id"),
-):
-    uid = _user_id_header(x_user_id)
-    if not uid:
-        raise HTTPException(400, "user_id_required")
-    get_or_create_user(uid)
+async def subscription_upgrade(body: UpgradeBody, user_id: str = Depends(resolve_user_id)):
+    get_or_create_user(user_id)
     if body.plan != "pro":
         raise HTTPException(400, "invalid_plan")
-    acc = upgrade_plan(uid, "pro")
+    acc = upgrade_plan(user_id, "pro")
     return {"ok": True, "account": acc, "message": "subscription_activated"}
+
+
+@app.get("/api/history")
+async def history_list(user_id: str = Depends(resolve_user_id)):
+    if not SUPABASE_ENABLED:
+        return {"ok": True, "items": [], "local_only": True}
+    from services import supabase_db
+
+    return {"ok": True, "items": supabase_db.list_history(user_id)}
+
+
+@app.post("/api/history")
+async def history_save(body: HistoryBody, user_id: str = Depends(resolve_user_id)):
+    if not SUPABASE_ENABLED:
+        return {"ok": True, "local_only": True}
+    from services import supabase_db
+
+    supabase_db.save_history(user_id, body.model_dump(exclude_none=True))
+    return {"ok": True}
+
+
+@app.delete("/api/history")
+async def history_clear(user_id: str = Depends(resolve_user_id)):
+    if not SUPABASE_ENABLED:
+        return {"ok": True, "local_only": True}
+    from services import supabase_db
+
+    supabase_db.clear_history(user_id)
+    return {"ok": True}
 
 
 async def _save_upload(upload: UploadFile) -> tuple[Path, str, str | None]:
@@ -145,7 +180,7 @@ async def _save_upload(upload: UploadFile) -> tuple[Path, str, str | None]:
 async def analyze(
     file: UploadFile | None = File(None),
     text: str | None = Form(None),
-    x_user_id: str | None = Header(None, alias="X-User-Id"),
+    user_id: str = Depends(resolve_user_id),
 ):
     if not file and not (text and text.strip()):
         raise HTTPException(400, "Загрузите файл или вставьте текст")
@@ -163,7 +198,7 @@ async def analyze(
         if raw_text is None and mime and mime.startswith("text/"):
             raw_text = saved_path.read_text(encoding="utf-8", errors="replace")
 
-    uid = _check_quota(_user_id_header(x_user_id))
+    uid = _check_quota(user_id)
 
     try:
         report = await analyze_content(
@@ -183,9 +218,9 @@ async def analyze(
 async def compare(
     file_a: UploadFile = File(...),
     file_b: UploadFile = File(...),
-    x_user_id: str | None = Header(None, alias="X-User-Id"),
+    user_id: str = Depends(resolve_user_id),
 ):
-    uid = _check_quota(_user_id_header(x_user_id))
+    uid = _check_quota(user_id)
     path_a: Path | None = None
     path_b: Path | None = None
     try:
